@@ -7,12 +7,21 @@ export async function apiRequest(path, init = {}) {
     const response = await fetch(`${APP_CONFIG.apiBaseUrl}/admin${path}`, {
       ...init,
       credentials: 'include',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...init.headers },
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Dohwaji-Admin': '1',
+        ...init.headers,
+      },
       signal: controller.signal,
     });
     if (response.status === 401) window.dispatchEvent(new CustomEvent('auth:expired'));
-    if (!response.ok) throw new Error(`Admin API request failed (${response.status})`);
-    return response.status === 204 ? null : response.json();
+    const payload = response.status === 204 ? null : await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.error ?? `운영 API 요청에 실패했습니다. (${response.status})`);
+    return payload;
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('운영 API 응답이 지연되고 있습니다.');
+    throw error;
   } finally {
     clearTimeout(timeout);
   }

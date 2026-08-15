@@ -1,7 +1,9 @@
 export const APP_CONFIG = Object.freeze({
   dataMode: 'mock',
-  authMode: 'mock',
-  apiBaseUrl: '',
+  authMode: 'api',
+  apiBaseUrl: ['localhost', '127.0.0.1', ''].includes(window.location.hostname)
+    ? 'http://localhost:3000/api'
+    : 'https://dohwaji.app/api',
   requestTimeoutMs: 10000,
   posthog: {
     enabled: false,

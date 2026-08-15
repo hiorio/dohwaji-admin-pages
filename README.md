@@ -1,6 +1,6 @@
 # 도화지 운영실
 
-도화지(`dohwaji.app`) 운영자를 위한 정적 관리자 프론트엔드입니다. 별도 빌드 없이 GitHub Pages에 배포할 수 있고, 기본 상태에서는 현실적인 mock data로 모든 화면과 주요 상호작용을 확인할 수 있습니다.
+도화지(`dohwaji.app`) 운영자를 위한 정적 관리자 프론트엔드입니다. 별도 빌드 없이 GitHub Pages에 배포할 수 있습니다. 화면 데이터는 초기에는 현실적인 mock data를 사용하지만, 로그인은 실제 도화지 백엔드와 Supabase Auth를 사용합니다. 정적 파일에는 관리자 비밀번호, 세션 토큰, service role key가 포함되지 않습니다.
 
 ## 포함 화면
 
@@ -42,7 +42,7 @@ python -m http.server 4173
 export const APP_CONFIG = {
   dataMode: 'api',
   authMode: 'api',
-  apiBaseUrl: 'https://api.dohwaji.app',
+  apiBaseUrl: 'https://dohwaji.app/api',
   // ...
 };
 ```
@@ -61,17 +61,17 @@ export const APP_CONFIG = {
 예상 백엔드 계약은 아래와 같습니다.
 
 ```text
-GET    /admin/auth/session
-POST   /admin/auth/login
-POST   /admin/auth/logout
+GET    /api/admin/auth/session
+POST   /api/admin/auth/login
+POST   /api/admin/auth/logout
 
-GET    /admin/dashboard
-GET    /admin/users?q=
-GET    /admin/users/:id
-PATCH  /admin/users/:id/status
-GET    /admin/usage
-GET    /admin/system
-GET    /admin/costs
+GET    /api/admin/dashboard
+GET    /api/admin/users?q=
+GET    /api/admin/users/:id
+PATCH  /api/admin/users/:id/status
+GET    /api/admin/usage
+GET    /api/admin/system
+GET    /api/admin/costs
 
 GET    /admin/integrations/posthog?range=7d
 GET    /admin/integrations/sentry?range=24h
@@ -81,13 +81,31 @@ API 응답은 현재 mock data와 같은 형태를 권장합니다. 계약이 �
 
 ## 관리자 인증 설계
 
-GitHub Pages는 관리자 인증 수단으로 사용하지 않습니다. 운영 모드에서는 다음 구성을 전제로 합니다.
+GitHub Pages는 관리자 인증 수단으로 사용하지 않습니다. 실제 구현은 다음과 같습니다.
 
-1. 로그인 폼이 `POST /admin/auth/login`을 호출합니다.
-2. 백엔드가 `Secure`, `HttpOnly`, `SameSite` 속성을 가진 세션 쿠키를 발급합니다. `admin.dohwaji.app` 같은 동일 사이트 도메인에서는 `Lax`를 우선 검토하고, `github.io` 주소에서 교차 사이트 쿠키가 꼭 필요하면 `SameSite=None; Secure`와 강한 CSRF 방어를 함께 적용합니다.
-3. 모든 `/admin/*` 요청은 `credentials: 'include'`로 세션 쿠키를 전송합니다.
-4. 백엔드는 매 요청에서 관리자 역할과 권한을 검사하고, 변경 작업은 감사 로그에 남깁니다.
-5. `admin.dohwaji.app`만 허용하도록 CORS origin을 제한하고 CSRF 방어를 적용합니다.
+1. 로그인 폼이 `POST /api/admin/auth/login`으로 이메일과 비밀번호를 전송합니다.
+2. 백엔드는 Supabase Auth로 비밀번호와 이메일 확인 상태를 검증합니다.
+3. `admin_users`에서 활성 관리자 역할을 확인한 뒤 256비트 난수 세션을 발급합니다. DB에는 원문이 아닌 SHA-256 해시만 저장합니다.
+4. 브라우저에는 `Secure`, `HttpOnly`, `SameSite=None`인 `__Host-dohwaji_admin` 쿠키만 저장됩니다.
+5. 모든 요청은 정확한 CORS origin allowlist를 통과해야 하며, 상태 변경 요청에는 `X-Dohwaji-Admin: 1` 헤더가 필요합니다.
+6. `lib/admin/guard.ts`의 `requireAdmin()`이 세션 만료, 강제 로그아웃, 관리자 활성 상태와 역할을 매 요청 검증합니다.
+7. 로그인·로그아웃과 이후 관리 작업은 `admin_audit_logs`에 기록합니다.
+
+### 최초 관리자 등록
+
+1. Supabase Auth에 운영자 이메일 계정을 만들고 이메일 확인을 완료합니다.
+2. Railway에 `ADMIN_BOOTSTRAP_EMAIL=운영자이메일`을 설정합니다.
+3. 아직 `admin_users`가 비어 있을 때 해당 계정으로 한 번 로그인하면 `owner`로 등록됩니다.
+4. 등록 후 `ADMIN_BOOTSTRAP_EMAIL`을 제거하고 재배포합니다.
+
+추가 관리자는 service role을 사용하는 서버 작업 또는 Supabase SQL Editor에서 아래처럼 명시적으로 등록합니다. 이메일이 아니라 Supabase Auth의 UUID를 사용합니다.
+
+```sql
+insert into public.admin_users (user_id, role, display_name, created_by)
+values ('<auth.users.id>', 'operator', '운영자 이름', '<기존 owner auth.users.id>');
+```
+
+역할은 `owner`, `operator`, `viewer` 세 가지입니다. 향후 변경 API는 예를 들어 `requireAdmin(request, { roles: ['owner', 'operator'], mutation: true })`처럼 보호합니다.
 
 관리자 토큰을 `localStorage`에 저장하거나, 데이터베이스 비밀번호·service role key·PostHog personal API key·Sentry auth token을 정적 파일에 넣지 마세요. 정적 프론트에 포함된 값은 저장소가 비공개여도 방문자에게 공개됩니다.
 

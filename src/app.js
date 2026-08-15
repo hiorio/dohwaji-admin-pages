@@ -49,7 +49,7 @@ function shell(content) {
             <div class="sync-state"><span class="sync-dot"></span><span>방금 동기화</span></div>
             <button class="icon-btn" data-refresh title="데이터 새로고침" aria-label="데이터 새로고침">↻</button>
             <button class="icon-btn" data-toast="새 알림이 없습니다." title="알림" aria-label="알림">•</button>
-            <button class="avatar-button" data-toast="운영자 계정 메뉴는 백엔드 인증 연동 후 활성화됩니다."><span class="avatar">관</span><span>${escapeHtml(state.session?.user?.name ?? '운영자')}</span></button>
+            <button class="avatar-button" data-signout title="로그아웃"><span class="avatar">관</span><span>${escapeHtml(state.session?.user?.name ?? '운영자')} · 로그아웃</span></button>
           </div>
         </header>
         <div class="content">${content}</div>
@@ -196,6 +196,12 @@ function bindEvents() {
   document.querySelector('[data-close-menu]')?.addEventListener('click', closeMenu);
   document.querySelectorAll('[data-refresh]').forEach((element) => element.addEventListener('click', () => { showToast('최신 데이터를 불러왔습니다.'); render(true); }));
   document.querySelectorAll('[data-toast]').forEach((element) => element.addEventListener('click', () => showToast(element.dataset.toast)));
+  document.querySelector('[data-signout]')?.addEventListener('click', async (event) => {
+    event.currentTarget.disabled = true;
+    try { await authAdapter.signOut(); }
+    catch (error) { showToast(error.message); }
+    finally { state.session = null; state.cache.clear(); renderLogin(); }
+  });
   document.querySelector('[data-user-search]')?.addEventListener('submit', (event) => {
     event.preventDefault();
     state.userQuery = new FormData(event.currentTarget).get('query').toString();
@@ -287,9 +293,10 @@ function drawVisibleCharts() {
 function renderLogin() {
   app.innerHTML = `<div class="login-page"><section class="login-brand"><div class="brand"><div class="brand-mark">도</div><div class="brand-copy"><strong>도화지 운영실</strong><span>dohwaji.app</span></div></div><div><h1>서비스의 오늘을<br>차분하게 살핍니다.</h1><p>사용자, 제품 사용, 시스템 상태와 비용을 한곳에서 확인하세요.</p></div><small>관리자 전용 · 모든 작업은 기록됩니다.</small></section><section class="login-form-wrap"><form class="login-form" data-login><h2>관리자 로그인</h2><p>도화지 운영 계정으로 로그인해 주세요. 인증은 별도 백엔드에서 안전하게 처리됩니다.</p><div class="field"><label for="email">이메일</label><input id="email" name="email" type="email" autocomplete="username" required></div><div class="field"><label for="password">비밀번호</label><input id="password" name="password" type="password" autocomplete="current-password" required></div><button class="primary-btn" type="submit">로그인</button><p class="login-hint">정적 페이지에는 관리자 비밀번호나 API 비밀키가 저장되지 않습니다.</p></form></section></div>`;
   document.querySelector('[data-login]').addEventListener('submit', async (event) => {
-    event.preventDefault(); const form = new FormData(event.currentTarget);
+    event.preventDefault(); const form = new FormData(event.currentTarget); const button = event.currentTarget.querySelector('button[type="submit"]');
+    button.disabled = true; button.textContent = '확인 중…';
     try { state.session = await authAdapter.signIn({ email: form.get('email'), password: form.get('password') }); render(); }
-    catch (error) { showToast(error.message); }
+    catch (error) { showToast(error.message); button.disabled = false; button.textContent = '로그인'; }
   });
 }
 
