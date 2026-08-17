@@ -28,6 +28,12 @@ function escapeHtml(value = '') {
 
 function formatNumber(value) { return new Intl.NumberFormat('ko-KR').format(value); }
 function formatWon(value) { return `${formatNumber(value)}원`; }
+function formatOptionalWon(value, fallback = '—') { return Number.isFinite(value) ? formatWon(value) : fallback; }
+function formatOriginalCost(provider) {
+  if (!Number.isFinite(provider.originalAmount)) return '';
+  if (provider.originalCurrency === 'USD') return `$${provider.originalAmount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  return formatWon(provider.originalAmount);
+}
 function shorten(value, maxLength = 88) {
   const normalized = String(value ?? '').replace(/\s+/g, ' ').trim();
   return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
@@ -123,7 +129,7 @@ function renderDashboard(data) {
     </section>
     <section class="grid equal-col">
       <article class="card card-pad"><div class="card-head"><div><h3>실시간 운영 신호</h3><p>시스템과 사용자 흐름에서 감지된 변화</p></div></div><div class="alert-list">${data.alerts.map((alert) => `<div class="alert-item"><span class="status-dot ${alert.level}"></span><div class="alert-copy"><strong>${alert.title}</strong><span>${alert.meta}</span></div><span class="alert-time">${alert.level === 'success' ? '정상' : '확인'}</span></div>`).join('')}</div></article>
-      <article class="card card-pad"><div class="card-head"><div><h3>이번 달 API 사용량</h3><p>실제 검색·경로·정적지도 호출</p></div><button class="text-link" data-route="costs">사용량 보기 →</button></div><div class="money">${formatNumber(monthApiCalls)}회</div><div class="kpi-foot"><span class="delta">LIVE</span><span>청구액 API는 아직 미연동</span></div><div class="budget-track"><div class="budget-fill" style="width:${Math.min(100, monthApiCalls ? 100 : 0)}%"></div></div><div class="budget-labels"><span>Supabase api_usage</span><span>${formatGeneratedAt(data.generatedAt)} 집계</span></div></article>
+      <article class="card card-pad"><div class="card-head"><div><h3>이번 달 API 사용량</h3><p>실제 검색·경로·정적지도 호출</p></div><button class="text-link" data-route="costs">비용 보기 →</button></div><div class="money">${formatNumber(monthApiCalls)}회</div><div class="kpi-foot"><span class="delta">LIVE</span><span>실제액·예상액·고정비 분리 집계</span></div><div class="budget-track"><div class="budget-fill" style="width:${Math.min(100, monthApiCalls ? 100 : 0)}%"></div></div><div class="budget-labels"><span>Supabase api_usage</span><span>${formatGeneratedAt(data.generatedAt)} 집계</span></div></article>
     </section>`;
 }
 
@@ -191,31 +197,27 @@ function renderSystem(data) {
 function renderCosts(data) {
   if (!data.available) {
     return `
-      ${pageIntro('실제 사용량만 표시합니다', '공급사 청구 API가 연결되기 전에는 금액을 추정하지 않습니다.', `<span class="mode-badge">${formatGeneratedAt(data.generatedAt)} LIVE</span>`)}
-      <div class="notice"><span class="notice-icon">i</span><span><strong>청구액 미연동</strong> · ${escapeHtml(data.message)}</span></div>
-      <section class="grid kpi-grid three">
-        ${kpiCard({ label: '이번 달 API 호출', value: `${formatNumber(data.monthToDateCalls)}회`, delta: '실데이터', hint: 'Supabase api_usage', tone: 'coral' })}
-        ${kpiCard({ label: '청구 금액', value: '미연동', delta: '표시 안 함', hint: '공급사 Billing API 필요', tone: 'blue' })}
-        ${kpiCard({ label: '예산 대비', value: '미설정', delta: '표시 안 함', hint: '실제 금액 연결 후 계산', tone: 'amber' })}
-      </section>
-      <section class="grid two-col">
-        <article class="card card-pad"><div class="card-head"><div><h3>일별 API 호출</h3><p>최근 7일 실제 호출량</p></div></div><div class="chart-wrap compact"><canvas class="chart-canvas" data-chart="activity" data-values="${data.trend.map((d) => d.calls).join(',')}" data-labels="${data.trend.map((d) => d.date).join(',')}"></canvas></div></article>
-        <article class="card card-pad"><div class="card-head"><div><h3>API 호출 구성</h3><p>이번 달 실제 호출 비중</p></div></div>${data.providers.length ? `<div class="chart-wrap compact"><canvas class="chart-canvas" data-chart="donut" data-values="${data.providers.map((p) => p.ratio).join(',')}" data-labels="${data.providers.map((p) => p.name).join(',')}"></canvas></div>` : '<div class="empty"><strong>호출 기록이 없습니다.</strong></div>'}</article>
-      </section>
-      <article class="card card-pad"><div class="card-head"><div><h3>API별 실제 사용량</h3><p>금액 대신 확인 가능한 원본 호출 수를 표시합니다.</p></div></div>${data.providers.length ? data.providers.map((provider) => `<div class="provider-row"><div class="provider-name"><strong>${escapeHtml(provider.name)}</strong><span>${escapeHtml(provider.category)}</span></div><div class="provider-bar"><span style="width:${provider.ratio}%"></span></div><span class="provider-amount">${formatNumber(provider.calls)}회</span><span class="provider-change">${provider.ratio}%</span></div>`).join('') : '<div class="empty"><strong>이번 달 사용량이 없습니다.</strong></div>'}</article>`;
+      ${pageIntro('비용 연결을 확인해 주세요', '사용량은 집계됐지만 합산 가능한 금액 공급사가 없습니다.', `<span class="mode-badge">${formatGeneratedAt(data.generatedAt)} LIVE</span>`)}
+      <div class="notice"><span class="notice-icon">i</span><span><strong>비용 설정 필요</strong> · ${escapeHtml(data.message)}</span></div>`;
   }
-  const budgetRate = Math.round((data.monthToDate / data.budget) * 1000) / 10;
+  const hasBudget = Number.isFinite(data.budget) && data.budget > 0;
+  const budgetRate = hasBudget ? Math.round((data.monthToDate / data.budget) * 1000) / 10 : null;
+  const budgetStatus = !hasBudget ? '예산 미설정' : data.projected <= data.budget ? '예산 내' : '예산 초과 예상';
+  const budgetClass = hasBudget && data.projected > data.budget ? 'review' : '';
+  const usableProviders = data.providers.filter((provider) => Number.isFinite(provider.amountKrw));
+  const sourceClass = (source) => source === 'estimate' ? 'review' : source === 'unavailable' ? 'suspended' : source === 'fixed' ? 'resolved' : '';
   return `
-    ${pageIntro('성장 속도와 비용을 함께 관리하세요', '실제 청구 데이터는 백엔드가 공급사별 API를 집계해 전달합니다.', '<div class="segmented"><button>7월</button><button class="active">8월</button></div>')}
+    ${pageIntro('실제액과 예상액을 구분해 관리하세요', `${escapeHtml(data.periodLabel)} · 공급사 API, 실제 호출량, 고정비를 합산합니다.`, `<span class="mode-badge">${formatGeneratedAt(data.generatedAt)} LIVE</span>`)}
+    ${data.completeness === 'partial' ? `<div class="notice"><span class="notice-icon">i</span><span><strong>일부 연동 필요</strong> · ${escapeHtml(data.message)}</span></div>` : ''}
     <section class="cost-hero">
-      <article class="card card-pad"><div class="card-head"><div><h3>8월 누적 비용</h3><p>14일 11:48 기준 · 부가세 별도</p></div><span class="status-pill">예산 내</span></div><div class="money">${formatWon(data.monthToDate)}</div><div class="kpi-foot"><span class="delta">${budgetRate}%</span><span>월 예산 ${formatWon(data.budget)}</span></div><div class="budget-track"><div class="budget-fill" style="width:${budgetRate}%"></div></div><div class="budget-labels"><span>사용 ${formatWon(data.monthToDate)}</span><span>남음 ${formatWon(data.budget - data.monthToDate)}</span></div></article>
-      <article class="card card-pad"><div class="card-head"><div><h3>예상과 효율</h3><p>현재 추세가 유지될 경우</p></div></div><div class="cost-metrics"><div class="cost-metric"><span>월말 예상</span><strong>${formatWon(data.projected)}</strong></div><div class="cost-metric"><span>활성 사용자당</span><strong>${formatWon(data.perActiveUser)}</strong></div><div class="cost-metric"><span>예산 여유</span><strong>${formatWon(data.budget - data.projected)}</strong></div><div class="cost-metric"><span>전월 대비</span><strong>+7.8%</strong></div></div></article>
+      <article class="card card-pad"><div class="card-head"><div><h3>${escapeHtml(data.periodLabel)} 확인 가능 금액</h3><p>부가세·카드사 환율은 최종 인보이스에서 달라질 수 있습니다.</p></div><span class="status-pill ${budgetClass}">${budgetStatus}</span></div><div class="money">${formatWon(data.monthToDate)}</div><div class="kpi-foot"><span class="delta">${hasBudget ? `${budgetRate}%` : 'LIVE'}</span><span>${hasBudget ? `월 예산 ${formatWon(data.budget)}` : `USD 환율 ${data.exchangeRate ? `${formatNumber(data.exchangeRate)}원` : '미설정'}`}</span></div>${hasBudget ? `<div class="budget-track"><div class="budget-fill" style="width:${Math.min(100, budgetRate)}%"></div></div><div class="budget-labels"><span>사용 ${formatWon(data.monthToDate)}</span><span>남음 ${formatWon(Math.max(0, data.budget - data.monthToDate))}</span></div>` : ''}</article>
+      <article class="card card-pad"><div class="card-head"><div><h3>금액 출처와 효율</h3><p>확정·예상·고정비를 섞어 숨기지 않습니다.</p></div></div><div class="cost-metrics"><div class="cost-metric"><span>월말 예상</span><strong>${formatWon(data.projected)}</strong></div><div class="cost-metric"><span>활성 사용자당</span><strong>${formatOptionalWon(data.perActiveUser)}</strong></div><div class="cost-metric"><span>공급사 실제액</span><strong>${formatWon(data.sourceTotals.actual)}</strong></div><div class="cost-metric"><span>사용량 예상 + 고정비</span><strong>${formatWon(data.sourceTotals.estimate + data.sourceTotals.fixed)}</strong></div></div></article>
     </section>
     <section class="grid two-col">
-      <article class="card card-pad"><div class="card-head"><div><h3>일별 비용 추이</h3><p>최근 7일 공급사 합계 · 천원</p></div></div><div class="chart-wrap compact"><canvas class="chart-canvas" data-chart="cost" data-values="${data.trend.map((d) => d.cost).join(',')}" data-labels="${data.trend.map((d) => d.date).join(',')}"></canvas></div></article>
-      <article class="card card-pad"><div class="card-head"><div><h3>비용 구성</h3><p>이번 달 누적 비중</p></div></div><div class="chart-wrap compact"><canvas class="chart-canvas" data-chart="donut" data-values="${data.providers.map((p) => p.ratio).join(',')}" data-labels="${data.providers.map((p) => p.name).join(',')}"></canvas></div></article>
+      <article class="card card-pad"><div class="card-head"><div><h3>사용량 기반 비용 추이</h3><p>최근 7일 · 월 고정비 제외</p></div></div><div class="chart-wrap compact"><canvas class="chart-canvas" data-chart="cost" data-values="${data.trend.map((d) => d.cost).join(',')}" data-labels="${data.trend.map((d) => d.date).join(',')}"></canvas></div></article>
+      <article class="card card-pad"><div class="card-head"><div><h3>비용 구성</h3><p>이번 달 확인 가능 금액 비중</p></div></div>${data.monthToDate > 0 ? `<div class="chart-wrap compact"><canvas class="chart-canvas" data-chart="donut" data-values="${usableProviders.map((p) => p.ratio).join(',')}" data-labels="${usableProviders.map((p) => p.name).join(',')}"></canvas></div>` : '<div class="empty"><strong>현재 비용은 0원입니다.</strong><p>유료 사용이나 고정비가 발생하면 구성이 표시됩니다.</p></div>'}</article>
     </section>
-    <article class="card card-pad"><div class="card-head"><div><h3>공급사별 비용</h3><p>비용 원본과 결제 정보는 각 공급사 콘솔에서 관리합니다.</p></div><button class="text-link" data-toast="예산 알림은 백엔드 작업 스케줄러 연동 후 활성화됩니다.">예산 알림 설정</button></div>${data.providers.map((provider) => `<div class="provider-row"><div class="provider-name"><strong>${provider.name}</strong><span>${provider.category}</span></div><div class="provider-bar"><span style="width:${provider.ratio}%"></span></div><span class="provider-amount">${formatWon(provider.amount)}</span><span class="provider-change">${provider.change}</span></div>`).join('')}</article>`;
+    <article class="card card-pad"><div class="card-head"><div><h3>공급사별 비용</h3><p>금액의 계산 근거와 연결 상태입니다.</p></div><span class="mode-badge">API ${formatNumber(data.monthToDateCalls)}회</span></div>${data.providers.map((provider) => `<div class="provider-row" title="${escapeHtml(provider.detail)}"><div class="provider-name"><strong>${escapeHtml(provider.name)}</strong><span>${escapeHtml(provider.category)} · ${escapeHtml(provider.detail)}</span></div><div class="provider-bar"><span style="width:${provider.ratio}%"></span></div><span class="provider-amount">${formatOptionalWon(provider.amountKrw, '연동 필요')}</span><span class="provider-change"><span class="status-pill ${sourceClass(provider.source)}">${escapeHtml(provider.sourceLabel)}</span>${formatOriginalCost(provider) ? `<small>${escapeHtml(formatOriginalCost(provider))}</small>` : ''}</span></div>`).join('')}</article>`;
 }
 
 function openUserDrawer(user) {

@@ -9,7 +9,7 @@
 - **Feedback**: 지원 화면에서 접수된 실제 의견 검색, 유형·상태 필터, 상세 확인, 처리 상태 변경
 - **Usage**: 최근 로그인, 지도·장소·공개 코스 이벤트 추이, 퍼널, 이벤트 순위
 - **System**: 데이터베이스·Auth·Storage 실시간 상태, 관리자 감사 로그, Sentry 연결 지점
-- **Costs**: 실제 API 호출량. 청구 API가 연결되기 전에는 금액을 추정하지 않음
+- **Costs**: 공급사 실제액, 사용량 기반 예상액, 월 고정비, 미연동 항목을 분리한 비용 합계
 
 화면 전환에는 `#/dashboard`, `#/users` 같은 해시 라우팅을 사용합니다. 따라서 GitHub Pages의 하위 경로에서 새로고침해도 404가 발생하지 않습니다.
 
@@ -86,10 +86,32 @@ GET    /admin/integrations/sentry?range=24h
 - Supabase Auth: 가입일, 이메일 확인, 최근 로그인, 계정 정지 상태
 - PostgreSQL: 지도, 장소, 보관 장소, 공개 코스, 좋아요, 다운로드, 관리자 감사 로그
 - `user_feedback`: 도화지 지원 화면에서 접수된 일반 의견, 문제 신고, 기능 제안과 처리 상태
-- `api_usage`: 검색·경로·정적 지도 API의 일별 실제 호출량
+- `api_usage`: 검색·정적 지도·이동수단별 경로 API의 일별 실제 호출량
 - 실시간 연결 확인: PostgreSQL, Supabase Auth, Storage, 지도 API 설정 여부
 
-앱 버전, 반복 방문 리텐션, Sentry 오류, Railway/Supabase 실제 청구액은 원천 데이터 또는 공급사 API가 아직 연결되지 않았으므로 임의 값이나 0원을 표시하지 않습니다. 해당 연동이 완료되면 PostHog/Sentry 어댑터 및 비용 API 응답에 합칩니다.
+앱 버전, 반복 방문 리텐션, Sentry 오류는 원천 이벤트가 아직 연결되지 않았으므로 임의 값을 표시하지 않습니다.
+
+## 비용 API 연동
+
+`GET /api/admin/costs`는 공급사별 실패를 격리합니다. 한 공급사가 지연되거나 토큰이 빠져도 나머지 금액과 실제 카카오 호출량은 계속 반환합니다. 응답과 화면은 다음 출처를 섞어 숨기지 않습니다.
+
+| 표시 | 의미 |
+|---|---|
+| 실제 | 공급사 API가 확인한 플랜 또는 금액 |
+| 예상 | 실제 사용량에 공식 단가·무료 쿼터를 적용한 값 |
+| 고정비 | 운영자가 등록한 월 비용 또는 연 비용의 월평균 |
+| 연동 필요 | 토큰, 환율, 플랜 설정이 없어 합계에서 제외한 값 |
+
+### 공급사별 설정
+
+- **Kakao Maps / Mobility**: `api_usage`의 실제 호출량을 사용합니다. 검색·정적 지도·도보·대중교통·자전거는 공식 무료 쿼터와 공개 단가를 적용합니다. 자동차 추가 쿼터 계약 단가는 공개되어 있지 않아 `KAKAO_CAR_ROUTE_UNIT_KRW`가 없으면 해당 초과 호출을 합계에서 제외합니다.
+- **Railway**: Workspace 읽기 토큰과 `RAILWAY_WORKSPACE_ID`로 GraphQL `usage`/`estimatedUsage`를 조회합니다. CPU·메모리·송신 트래픽·볼륨 사용량에 공식 단가를 적용하고 현재 플랜의 포함 사용량을 반영합니다.
+- **Supabase**: `SUPABASE_ACCESS_TOKEN`과 `SUPABASE_ORGANIZATION_SLUG`가 있으면 Management API에서 조직 플랜과 활성 프로젝트 수를 확인합니다. 토큰이 없다면 `SUPABASE_BILLING_PLAN`을 사용합니다. 애드온·초과 사용료는 `SUPABASE_MONTHLY_COST_USD`로 공급사 콘솔의 Upcoming Invoice 값을 덮어쓸 수 있습니다.
+- **Resend / 도메인 / 기타**: 공개 청구 API가 없는 비용은 `RESEND_MONTHLY_COST_USD`, `DOMAIN_ANNUAL_COST_KRW`, `ADMIN_FIXED_COSTS_JSON`으로 등록합니다.
+
+USD 금액을 원화 합계에 포함하려면 `ADMIN_USD_KRW_RATE`가 필요합니다. 카드사 환율과 세금은 최종 인보이스에서 달라질 수 있으므로 화면에도 예상액으로 표시합니다. `ADMIN_MONTHLY_BUDGET_KRW`를 설정하면 예산 사용률과 월말 초과 예상도 함께 표시됩니다.
+
+모든 토큰과 비용 설정은 Railway의 서버 환경 변수에만 둡니다. GitHub Pages의 `admin/src/config.js`나 정적 JavaScript에는 넣지 않습니다.
 
 ## 관리자 인증 설계
 

@@ -230,14 +230,15 @@ tbody tr:hover { background: rgba(246,244,239,.72); }
 .cost-metric { padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); }
 .cost-metric span { display: block; margin-bottom: 8px; color: var(--muted); font-size: 9px; }
 .cost-metric strong { font-family: Georgia, serif; font-size: 18px; }
-.provider-row { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(120px, 2fr) 96px 92px; align-items: center; gap: 14px; min-height: 62px; border-top: 1px solid var(--line); font-size: 10px; }
+.provider-row { display: grid; grid-template-columns: minmax(210px, 1.45fr) minmax(90px, 1fr) 106px 92px; align-items: center; gap: 14px; min-height: 68px; border-top: 1px solid var(--line); font-size: 10px; }
 .provider-row:first-child { border-top: 0; }
 .provider-name strong, .provider-name span { display: block; }
-.provider-name span { margin-top: 4px; color: var(--muted); font-size: 9px; }
+.provider-name span { display: -webkit-box; margin-top: 4px; overflow: hidden; color: var(--muted); font-size: 9px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .provider-bar { height: 7px; overflow: hidden; border-radius: 999px; background: #e9e6df; }
 .provider-bar span { display: block; height: 100%; border-radius: inherit; background: var(--blue); }
 .provider-amount { font-weight: 800; text-align: right; }
-.provider-change { color: var(--muted); text-align: right; }
+.provider-change { display: grid; justify-items: end; gap: 4px; color: var(--muted); text-align: right; }
+.provider-change small { font-size: 8px; }
 
 .login-page { display: grid; min-height: 100vh; grid-template-columns: minmax(320px, .9fr) minmax(420px, 1.1fr); background: var(--paper); }
 .login-brand { display: flex; flex-direction: column; justify-content: space-between; padding: 48px; background: var(--sidebar); color: white; }
