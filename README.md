@@ -6,6 +6,7 @@
 
 - **Dashboard**: 로그인 사용자, 가입, 지도 생성, API 호출 KPI, 추이 차트, 운영 신호
 - **Users**: 이름·이메일·UID 검색, 상태 필터, 사용자 상세, 최근 활동, 관리 작업 진입점
+- **Feedback**: 지원 화면에서 접수된 실제 의견 검색, 유형·상태 필터, 상세 확인, 처리 상태 변경
 - **Usage**: 최근 로그인, 지도·장소·공개 코스 이벤트 추이, 퍼널, 이벤트 순위
 - **System**: 데이터베이스·Auth·Storage 실시간 상태, 관리자 감사 로그, Sentry 연결 지점
 - **Costs**: 실제 API 호출량. 청구 API가 연결되기 전에는 금액을 추정하지 않음
@@ -68,6 +69,8 @@ GET    /api/admin/dashboard
 GET    /api/admin/users?q=
 GET    /api/admin/users/:id
 PATCH  /api/admin/users/:id/status
+GET    /api/admin/feedback
+PATCH  /api/admin/feedback/:id/status
 GET    /api/admin/usage
 GET    /api/admin/system
 GET    /api/admin/costs
@@ -82,6 +85,7 @@ GET    /admin/integrations/sentry?range=24h
 
 - Supabase Auth: 가입일, 이메일 확인, 최근 로그인, 계정 정지 상태
 - PostgreSQL: 지도, 장소, 보관 장소, 공개 코스, 좋아요, 다운로드, 관리자 감사 로그
+- `user_feedback`: 도화지 지원 화면에서 접수된 일반 의견, 문제 신고, 기능 제안과 처리 상태
 - `api_usage`: 검색·경로·정적 지도 API의 일별 실제 호출량
 - 실시간 연결 확인: PostgreSQL, Supabase Auth, Storage, 지도 API 설정 여부
 

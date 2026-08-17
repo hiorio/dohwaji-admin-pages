@@ -8,11 +8,14 @@ const state = {
   route: routeFromHash(),
   cache: new Map(),
   selectedUser: null,
+  selectedFeedback: null,
   userQuery: '',
   userFilter: 'all',
+  feedbackQuery: '',
+  feedbackFilter: 'all',
 };
 
-const NAV_ICONS = { dashboard: 'D', users: 'U', usage: 'A', system: 'S', costs: '₩' };
+const NAV_ICONS = { dashboard: 'D', users: 'U', feedback: 'F', usage: 'A', system: 'S', costs: '₩' };
 
 function routeFromHash() {
   const route = window.location.hash.replace('#/', '').split('?')[0];
@@ -25,6 +28,10 @@ function escapeHtml(value = '') {
 
 function formatNumber(value) { return new Intl.NumberFormat('ko-KR').format(value); }
 function formatWon(value) { return `${formatNumber(value)}원`; }
+function shorten(value, maxLength = 88) {
+  const normalized = String(value ?? '').replace(/\s+/g, ' ').trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
+}
 function formatGeneratedAt(value) {
   if (!value) return '방금';
   return new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit' }).format(new Date(value));
@@ -90,6 +97,7 @@ async function render(force = false) {
     let content = '';
     if (state.route === 'dashboard') content = renderDashboard(await getData('dashboard', () => dataService.dashboard(), force));
     if (state.route === 'users') content = renderUsers(await getData(`users:${state.userQuery}`, () => dataService.users(state.userQuery), force));
+    if (state.route === 'feedback') content = renderFeedback(await getData('feedback', () => dataService.feedback(), force));
     if (state.route === 'usage') content = renderUsage(await getData('usage', () => dataService.usage(), force));
     if (state.route === 'system') content = renderSystem(await getData('system', () => dataService.system(), force));
     if (state.route === 'costs') content = renderCosts(await getData('costs', () => dataService.costs(), force));
@@ -127,6 +135,29 @@ function renderUsers(users) {
     <section class="card table-card">
       <div class="table-toolbar"><form class="search-box" data-user-search><span class="search-icon">⌕</span><input name="query" value="${escapeHtml(state.userQuery)}" placeholder="이메일, UID, 이름 검색" aria-label="사용자 검색" autocomplete="off"><span class="search-count">${filtered.length}명</span></form><div class="filter-group">${[['all','전체'],['active','정상'],['review','검토'],['suspended','정지']].map(([id,label]) => `<button class="filter-chip ${state.userFilter === id ? 'active' : ''}" data-user-filter="${id}">${label}</button>`).join('')}</div></div>
       ${filtered.length ? `<div class="table-scroll"><table><thead><tr><th>사용자</th><th>상태</th><th>가입일</th><th>최근 접속</th><th>환경</th><th>지도</th></tr></thead><tbody>${filtered.map((user) => `<tr data-user-id="${user.id}" tabindex="0"><td><div class="user-cell"><span class="user-avatar">${user.avatar}</span><div><strong>${escapeHtml(user.name)}</strong><span>${escapeHtml(user.email)}</span></div></div></td><td><span class="status-pill ${user.status}">${statusLabel[user.status]}</span></td><td>${user.joinedAt}</td><td>${user.lastSeen}</td><td>${escapeHtml(user.os)} · ${escapeHtml(user.version)}</td><td>${user.maps}개</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty"><strong>검색 결과가 없습니다.</strong><p>이메일이나 UID를 다시 확인해 주세요.</p></div>'}
+    </section>`;
+}
+
+function renderFeedback(data) {
+  const normalizedQuery = state.feedbackQuery.trim().toLowerCase();
+  const filtered = data.items.filter((item) => {
+    const matchesStatus = state.feedbackFilter === 'all' || item.status === state.feedbackFilter;
+    const matchesQuery = !normalizedQuery || [item.message, item.name, item.email, item.categoryLabel]
+      .some((value) => String(value ?? '').toLowerCase().includes(normalizedQuery));
+    return matchesStatus && matchesQuery;
+  });
+  const statusLabel = { new: '새 의견', reviewing: '확인 중', resolved: '처리 완료' };
+  return `
+    ${pageIntro('사용자의 목소리를 놓치지 마세요', '도화지 지원 화면에서 접수된 실제 의견을 최신순으로 확인합니다.', `<span class="mode-badge">${formatGeneratedAt(data.generatedAt)} LIVE</span>`)}
+    <section class="grid kpi-grid">
+      ${kpiCard({ label: '전체 접수', value: `${formatNumber(data.summary.total)}건`, delta: '최근 200건', hint: '지원 화면 접수', tone: 'coral' })}
+      ${kpiCard({ label: '새 의견', value: `${formatNumber(data.summary.new)}건`, delta: '확인 필요', hint: '아직 분류 전', tone: 'amber' })}
+      ${kpiCard({ label: '확인 중', value: `${formatNumber(data.summary.reviewing)}건`, delta: '처리 중', hint: '운영자 확인', tone: 'blue' })}
+      ${kpiCard({ label: '최근 7일', value: `${formatNumber(data.summary.recent)}건`, delta: '실데이터', hint: '신규 접수', tone: 'mint' })}
+    </section>
+    <section class="card table-card">
+      <div class="table-toolbar"><form class="search-box" data-feedback-search><span class="search-icon">⌕</span><input name="query" value="${escapeHtml(state.feedbackQuery)}" placeholder="내용, 사용자, 이메일 검색" aria-label="사용자 의견 검색" autocomplete="off"><span class="search-count">${filtered.length}건</span></form><div class="filter-group">${[['all','전체'],['new','새 의견'],['reviewing','확인 중'],['resolved','완료']].map(([id,label]) => `<button class="filter-chip ${state.feedbackFilter === id ? 'active' : ''}" data-feedback-filter="${id}">${label}</button>`).join('')}</div></div>
+      ${filtered.length ? `<div class="table-scroll"><table><thead><tr><th>의견</th><th>유형</th><th>상태</th><th>작성자</th><th>접수 시각</th><th>답장</th></tr></thead><tbody>${filtered.map((item) => `<tr data-feedback-id="${item.id}" tabindex="0"><td><div class="feedback-cell"><strong>${escapeHtml(shorten(item.message, 72))}</strong><span>${escapeHtml(item.sourceLabel)}</span></div></td><td><span class="category-pill ${item.category}">${escapeHtml(item.categoryLabel)}</span></td><td><span class="status-pill ${item.status}">${statusLabel[item.status] ?? item.status}</span></td><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.createdAt)}</td><td>${item.contactAllowed ? '가능' : '미요청'}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty"><strong>조건에 맞는 의견이 없습니다.</strong><p>검색어나 상태 필터를 바꿔 보세요.</p></div>'}
     </section>`;
 }
 
@@ -195,6 +226,18 @@ function openUserDrawer(user) {
   bindDrawerEvents();
 }
 
+function openFeedbackDrawer(item) {
+  state.selectedFeedback = item;
+  const statusLabel = { new: '새 의견', reviewing: '확인 중', resolved: '처리 완료' };
+  const canManage = ['owner', 'operator'].includes(state.session?.user?.role);
+  const actions = canManage ? [['new','새 의견'],['reviewing','확인 중'],['resolved','처리 완료']]
+    .filter(([status]) => status !== item.status)
+    .map(([status, label]) => `<button class="${status === 'resolved' ? 'primary-btn' : 'soft-btn'}" data-feedback-action="${status}">${label}${status === 'resolved' ? '로' : '으로'} 변경</button>`).join('') : '';
+  document.body.insertAdjacentHTML('beforeend', `<div class="drawer-backdrop" data-close-drawer></div><aside class="drawer" role="dialog" aria-modal="true" aria-label="사용자 의견 상세"><div class="drawer-head"><h2>사용자 의견 상세</h2><button class="icon-btn" data-close-drawer aria-label="닫기">×</button></div><div class="drawer-body"><div class="feedback-heading"><span class="category-pill ${item.category}">${escapeHtml(item.categoryLabel)}</span><span class="status-pill ${item.status}">${statusLabel[item.status] ?? item.status}</span></div><div class="detail-grid"><div class="detail-item"><span>작성자</span><strong>${escapeHtml(item.name)}</strong></div><div class="detail-item"><span>접수 시각</span><strong>${escapeHtml(item.createdAt)}</strong></div><div class="detail-item"><span>답장 이메일</span><strong>${escapeHtml(item.email)}</strong></div><div class="detail-item"><span>연락 동의</span><strong>${item.contactAllowed ? '답장 가능' : '미요청'}</strong></div></div><h4 class="section-title">의견 내용</h4><div class="feedback-message">${escapeHtml(item.message)}</div><h4 class="section-title">접수 정보</h4><div class="activity">${escapeHtml(item.sourceLabel)} · ${escapeHtml(item.userAgent || '환경 정보 없음')}</div>${actions ? `<div class="drawer-actions">${actions}</div>` : ''}</div></aside>`);
+  document.querySelector('.drawer [data-close-drawer]')?.focus();
+  bindDrawerEvents();
+}
+
 function bindDrawerEvents() {
   document.querySelectorAll('[data-close-drawer]').forEach((element) => element.addEventListener('click', closeDrawer));
   document.querySelector('[data-user-action]')?.addEventListener('click', async (event) => {
@@ -217,6 +260,7 @@ function closeDrawer() {
   document.querySelector('.drawer')?.remove();
   document.querySelector('.drawer-backdrop')?.remove();
   state.selectedUser = null;
+  state.selectedFeedback = null;
 }
 
 function bindEvents() {
@@ -237,6 +281,12 @@ function bindEvents() {
     render(true);
   });
   document.querySelectorAll('[data-user-filter]').forEach((element) => element.addEventListener('click', () => { state.userFilter = element.dataset.userFilter; render(); }));
+  document.querySelector('[data-feedback-search]')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    state.feedbackQuery = new FormData(event.currentTarget).get('query').toString();
+    render();
+  });
+  document.querySelectorAll('[data-feedback-filter]').forEach((element) => element.addEventListener('click', () => { state.feedbackFilter = element.dataset.feedbackFilter; render(); }));
   document.querySelectorAll('[data-user-id]').forEach((row) => {
     const handler = async () => {
       try {
@@ -249,6 +299,29 @@ function bindEvents() {
     row.addEventListener('click', handler);
     row.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); handler(); } });
   });
+  document.querySelectorAll('[data-feedback-id]').forEach((row) => {
+    const handler = () => {
+      const data = state.cache.get('feedback');
+      const item = data?.items.find((feedback) => String(feedback.id) === row.dataset.feedbackId);
+      if (item) openFeedbackDrawer(item);
+    };
+    row.addEventListener('click', handler);
+    row.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); handler(); } });
+  });
+  document.querySelectorAll('[data-feedback-action]').forEach((element) => element.addEventListener('click', async (event) => {
+    const status = event.currentTarget.dataset.feedbackAction;
+    event.currentTarget.disabled = true;
+    try {
+      await dataService.updateFeedbackStatus(state.selectedFeedback.id, status);
+      state.cache.delete('feedback');
+      closeDrawer();
+      showToast('의견 상태를 변경하고 감사 로그에 기록했습니다.');
+      await render(true);
+    } catch (error) {
+      event.currentTarget.disabled = false;
+      showToast(error.message);
+    }
+  }));
 }
 
 function closeMenu() { document.body.classList.remove('menu-open'); }
@@ -324,7 +397,7 @@ function drawVisibleCharts() {
 }
 
 function renderLogin() {
-  app.innerHTML = `<div class="login-page"><section class="login-brand"><div class="brand"><div class="brand-mark">도</div><div class="brand-copy"><strong>도화지 운영실</strong><span>dohwaji.app</span></div></div><div><h1>서비스의 오늘을<br>차분하게 살핍니다.</h1><p>사용자, 제품 사용, 시스템 상태와 비용을 한곳에서 확인하세요.</p></div><small>관리자 전용 · 모든 작업은 기록됩니다.</small></section><section class="login-form-wrap"><form class="login-form" data-login><h2>관리자 로그인</h2><p>도화지 운영 계정으로 로그인해 주세요. 인증은 별도 백엔드에서 안전하게 처리됩니다.</p><div class="field"><label for="email">이메일</label><input id="email" name="email" type="email" autocomplete="username" required></div><div class="field"><label for="password">비밀번호</label><input id="password" name="password" type="password" autocomplete="current-password" required></div><button class="primary-btn" type="submit">로그인</button><p class="login-hint">정적 페이지에는 관리자 비밀번호나 API 비밀키가 저장되지 않습니다.</p></form></section></div>`;
+  app.innerHTML = `<div class="login-page"><section class="login-brand"><div class="brand"><div class="brand-mark">도</div><div class="brand-copy"><strong>도화지 운영실</strong><span>dohwaji.app</span></div></div><div><h1>서비스의 오늘을<br>차분하게 살핍니다.</h1><p>사용자, 의견, 제품 사용, 시스템 상태와 비용을 한곳에서 확인하세요.</p></div><small>관리자 전용 · 모든 작업은 기록됩니다.</small></section><section class="login-form-wrap"><form class="login-form" data-login><h2>관리자 로그인</h2><p>도화지 운영 계정으로 로그인해 주세요. 인증은 별도 백엔드에서 안전하게 처리됩니다.</p><div class="field"><label for="email">이메일</label><input id="email" name="email" type="email" autocomplete="username" required></div><div class="field"><label for="password">비밀번호</label><input id="password" name="password" type="password" autocomplete="current-password" required></div><button class="primary-btn" type="submit">로그인</button><p class="login-hint">정적 페이지에는 관리자 비밀번호나 API 비밀키가 저장되지 않습니다.</p></form></section></div>`;
   document.querySelector('[data-login]').addEventListener('submit', async (event) => {
     event.preventDefault(); const form = new FormData(event.currentTarget); const button = event.currentTarget.querySelector('button[type="submit"]');
     button.disabled = true; button.textContent = '확인 중…';

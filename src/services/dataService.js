@@ -13,6 +13,12 @@ export const dataService = {
   async user(id) {
     return adminApi.user(id);
   },
+  async feedback() {
+    return adminApi.feedback();
+  },
+  async updateFeedbackStatus(id, status) {
+    return adminApi.updateFeedbackStatus(id, status);
+  },
   async usage(range = '7d') {
     const [usage, posthog] = await Promise.all([adminApi.usage(range), posthogAdapter.getUsageSummary(range)]);
     return posthog ? { ...usage, ...posthog } : usage;
