@@ -25,6 +25,10 @@ function escapeHtml(value = '') {
 
 function formatNumber(value) { return new Intl.NumberFormat('ko-KR').format(value); }
 function formatWon(value) { return `${formatNumber(value)}원`; }
+function formatGeneratedAt(value) {
+  if (!value) return '방금';
+  return new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit' }).format(new Date(value));
+}
 
 function shell(content) {
   const route = ROUTES.find((item) => item.id === state.route) ?? ROUTES[0];
@@ -99,9 +103,11 @@ async function render(force = false) {
 }
 
 function renderDashboard(data) {
+  const primaryAlert = data.alerts.find((alert) => alert.level !== 'success') ?? data.alerts[0];
+  const monthApiCalls = data.usageSummary?.monthApiCalls ?? 0;
   return `
-    ${pageIntro('오늘 도화지는 이렇게 움직이고 있어요', '2026년 8월 14일 금요일 · 오전 11:48 기준', '<button class="soft-btn" data-toast="CSV 내보내기는 운영 API 연동 후 활성화됩니다.">보고서 내보내기</button><div class="segmented"><button>7일</button><button class="active">오늘</button></div>')}
-    <div class="notice"><span class="notice-icon">!</span><span><strong>확인이 필요한 항목 1개</strong> · iOS 1.3.1에서 공유 실패율이 평소보다 높습니다.</span><button class="text-link" data-route="system">상태 보기 →</button></div>
+    ${pageIntro('오늘 도화지는 이렇게 움직이고 있어요', `${escapeHtml(data.periodLabel)} 기준 · 실데이터`, '<button class="soft-btn" data-toast="현재 화면은 Supabase 운영 데이터를 직접 집계합니다.">데이터 출처</button><div class="segmented"><button>7일</button><button class="active">오늘</button></div>')}
+    ${primaryAlert ? `<div class="notice"><span class="notice-icon">!</span><span><strong>${escapeHtml(primaryAlert.title)}</strong> · ${escapeHtml(primaryAlert.meta)}</span><button class="text-link" data-route="system">상태 보기 →</button></div>` : ''}
     <section class="grid kpi-grid">${data.kpis.map(kpiCard).join('')}</section>
     <section class="grid two-col">
       <article class="card card-pad"><div class="card-head"><div><h3>활성 사용자 흐름</h3><p>최근 7일 일간 활성 사용자와 신규 가입</p></div><button class="text-link" data-route="usage">자세히 보기 →</button></div><div class="chart-wrap"><canvas class="chart-canvas" data-chart="activity" data-values="${data.trend.map((d) => d.dau).join(',')}" data-secondary="${data.trend.map((d) => d.newUsers).join(',')}" data-labels="${data.trend.map((d) => d.date).join(',')}"></canvas></div><div class="chart-legend"><span class="legend-item"><i class="legend-dot" style="--color:var(--coral)"></i>활성 사용자</span><span class="legend-item"><i class="legend-dot" style="--color:var(--blue)"></i>신규 가입</span></div></article>
@@ -109,7 +115,7 @@ function renderDashboard(data) {
     </section>
     <section class="grid equal-col">
       <article class="card card-pad"><div class="card-head"><div><h3>실시간 운영 신호</h3><p>시스템과 사용자 흐름에서 감지된 변화</p></div></div><div class="alert-list">${data.alerts.map((alert) => `<div class="alert-item"><span class="status-dot ${alert.level}"></span><div class="alert-copy"><strong>${alert.title}</strong><span>${alert.meta}</span></div><span class="alert-time">${alert.level === 'success' ? '정상' : '확인'}</span></div>`).join('')}</div></article>
-      <article class="card card-pad"><div class="card-head"><div><h3>이번 달 비용</h3><p>예산 대비 현재 사용 추이</p></div><button class="text-link" data-route="costs">비용 보기 →</button></div><div class="money">428,600원</div><div class="kpi-foot"><span class="delta">42.9%</span><span>월 예산 100만원 사용</span></div><div class="budget-track"><div class="budget-fill" style="width:42.9%"></div></div><div class="budget-labels"><span>8월 1일</span><span>예상 월말 782,000원</span></div></article>
+      <article class="card card-pad"><div class="card-head"><div><h3>이번 달 API 사용량</h3><p>실제 검색·경로·정적지도 호출</p></div><button class="text-link" data-route="costs">사용량 보기 →</button></div><div class="money">${formatNumber(monthApiCalls)}회</div><div class="kpi-foot"><span class="delta">LIVE</span><span>청구액 API는 아직 미연동</span></div><div class="budget-track"><div class="budget-fill" style="width:${Math.min(100, monthApiCalls ? 100 : 0)}%"></div></div><div class="budget-labels"><span>Supabase api_usage</span><span>${formatGeneratedAt(data.generatedAt)} 집계</span></div></article>
     </section>`;
 }
 
@@ -129,28 +135,44 @@ function renderUsage(data) {
     ${pageIntro('사용자가 가치를 느끼는 지점을 살펴보세요', '핵심 이벤트만 선별해 비용과 노이즈를 줄였습니다.', '<div class="segmented"><button>30일</button><button class="active">7일</button><button>오늘</button></div>')}
     <section class="grid kpi-grid three">${data.kpis.map(kpiCard).join('')}</section>
     <section class="grid two-col">
-      <article class="card card-pad"><div class="card-head"><div><h3>사용자와 핵심 행동</h3><p>활성 사용자 대비 주요 행동 발생량</p></div><span class="mode-badge">POSTHOG READY</span></div><div class="chart-wrap"><canvas class="chart-canvas" data-chart="activity" data-values="${data.trend.map((d) => d.actions).join(',')}" data-secondary="${data.trend.map((d) => d.dau).join(',')}" data-labels="${data.trend.map((d) => d.date).join(',')}"></canvas></div><div class="chart-legend"><span class="legend-item"><i class="legend-dot" style="--color:var(--coral)"></i>핵심 행동</span><span class="legend-item"><i class="legend-dot" style="--color:var(--blue)"></i>활성 사용자</span></div></article>
+      <article class="card card-pad"><div class="card-head"><div><h3>사용자와 핵심 행동</h3><p>Supabase에 저장된 지도·장소·공개 코스</p></div><span class="mode-badge">LIVE DB</span></div><div class="chart-wrap"><canvas class="chart-canvas" data-chart="activity" data-values="${data.trend.map((d) => d.actions).join(',')}" data-secondary="${data.trend.map((d) => d.dau).join(',')}" data-labels="${data.trend.map((d) => d.date).join(',')}"></canvas></div><div class="chart-legend"><span class="legend-item"><i class="legend-dot" style="--color:var(--coral)"></i>핵심 행동</span><span class="legend-item"><i class="legend-dot" style="--color:var(--blue)"></i>최근 로그인</span></div></article>
       <article class="card card-pad"><div class="card-head"><div><h3>첫 가치 도달 퍼널</h3><p>최근 7일 고유 사용자 기준</p></div></div><div class="funnel">${data.funnel.map((item) => `<div class="funnel-row"><span class="funnel-label">${item.label}</span><div class="funnel-bar"><div class="funnel-fill" style="width:${item.rate}%">${item.rate}%</div></div><span class="funnel-value">${formatNumber(item.value)}명</span></div>`).join('')}</div></article>
     </section>
     <section class="grid equal-col">
-      <article class="card card-pad"><div class="card-head"><div><h3>7일 리텐션</h3><p>첫 방문 이후 다시 돌아온 사용자 비율</p></div></div><div class="retention-strip">${data.retention.map((value) => `<div class="retention-cell" style="--intensity:${Math.max(18, value)}%">${value}%</div>`).join('')}</div><div class="retention-labels">${data.retention.map((_, index) => `<span>D${index}</span>`).join('')}</div></article>
+      <article class="card card-pad"><div class="card-head"><div><h3>7일 리텐션</h3><p>첫 방문 이후 다시 돌아온 사용자 비율</p></div></div>${data.retentionAvailable ? `<div class="retention-strip">${data.retention.map((value) => `<div class="retention-cell" style="--intensity:${Math.max(18, value)}%">${value}%</div>`).join('')}</div><div class="retention-labels">${data.retention.map((_, index) => `<span>D${index}</span>`).join('')}</div>` : `<div class="empty"><strong>수집 전</strong><p>${escapeHtml(data.retentionMessage)}</p></div>`}</article>
       <article class="card card-pad"><div class="card-head"><div><h3>이벤트 순위</h3><p>최근 7일 기준</p></div></div><div class="table-scroll"><table><thead><tr><th>Event</th><th>횟수</th><th>사용자</th><th>변화</th></tr></thead><tbody>${data.events.map((event) => `<tr><td><strong>${event.event}</strong></td><td>${formatNumber(event.count)}</td><td>${formatNumber(event.users)}</td><td><span class="delta ${event.change.startsWith('-') ? 'negative' : ''}">${event.change}</span></td></tr>`).join('')}</tbody></table></div></article>
     </section>`;
 }
 
 function renderSystem(data) {
-  const statusLabels = { operational: '정상', degraded: '지연', investigating: '조사 중', resolved: '해결됨' };
+  const statusLabels = { operational: '정상', degraded: '확인 필요', investigating: '조사 중', resolved: '기록됨' };
+  const allHealthy = data.services.every((service) => service.status === 'operational');
   return `
-    ${pageIntro('서비스의 맥박을 한눈에 확인하세요', '오류 원문과 민감 정보는 Sentry에서, 운영 요약만 이곳에서 확인합니다.', '<button class="soft-btn" data-toast="Sentry 연결 설정은 README의 연동 가이드를 확인해 주세요.">Sentry 열기 ↗</button>')}
-    <article class="card card-pad system-hero"><div class="health-score"><div class="health-score-inner"><strong>${data.score}%</strong><span>최근 30일 가동률</span></div></div><div class="health-copy"><span class="status-pill">모든 핵심 기능 정상</span><h2>도화지는 안정적으로 운영 중입니다.</h2><p>지도 제공사의 응답이 평소보다 조금 느리지만 사용자 요청은 정상 처리되고 있습니다. 10분 간격으로 상태를 확인합니다.</p></div></article>
+    ${pageIntro('서비스의 맥박을 한눈에 확인하세요', `마지막 실시간 확인 ${formatGeneratedAt(data.generatedAt)} · 오류 원문은 연동된 모니터링 도구에서 관리합니다.`, '<button class="soft-btn" data-toast="Sentry는 아직 연결되지 않았습니다.">Sentry 상태</button>')}
+    <article class="card card-pad system-hero"><div class="health-score" style="background:conic-gradient(var(--mint) ${data.score}%, #e5e2da 0)"><div class="health-score-inner"><strong>${data.score}%</strong><span>현재 연결 점수</span></div></div><div class="health-copy"><span class="status-pill ${allHealthy ? '' : 'review'}">${allHealthy ? '모든 연결 정상' : '확인 항목 있음'}</span><h2>${allHealthy ? '도화지 핵심 연결이 정상입니다.' : '일부 연결을 확인해 주세요.'}</h2><p>${escapeHtml(data.summary)}</p></div></article>
     <section class="grid two-col">
       <article class="card card-pad"><div class="card-head"><div><h3>서비스 상태</h3><p>최근 5분의 상태와 응답 시간</p></div><span class="sync-state"><span class="sync-dot"></span>Live</span></div><div class="service-list">${data.services.map((service) => `<div class="service-row"><strong>${service.name}</strong><span class="status-pill ${service.status === 'degraded' ? 'review' : ''}">${statusLabels[service.status]}</span><span>${service.latency}</span><span>${service.uptime}</span><span class="detail">${service.detail}</span></div>`).join('')}</div></article>
-      <article class="card card-pad"><div class="card-head"><div><h3>앱 버전 분포</h3><p>최근 7일 활성 기기 기준</p></div></div><div class="bar-list">${data.versions.map((version) => `<div class="bar-row"><div class="bar-meta"><span><strong>${version.version}</strong> · ${version.status}</span><strong>${version.share}%</strong></div><div class="bar-track"><div class="bar-fill" style="width:${version.share}%"></div></div></div>`).join('')}</div></article>
+      <article class="card card-pad"><div class="card-head"><div><h3>앱 버전 분포</h3><p>최근 7일 활성 기기 기준</p></div></div>${data.versions.length ? `<div class="bar-list">${data.versions.map((version) => `<div class="bar-row"><div class="bar-meta"><span><strong>${version.version}</strong> · ${version.status}</span><strong>${version.share}%</strong></div><div class="bar-track"><div class="bar-fill" style="width:${version.share}%"></div></div></div>`).join('')}</div>` : `<div class="empty"><strong>수집 전</strong><p>${escapeHtml(data.versionMessage)}</p></div>`}</article>
     </section>
-    <article class="card card-pad"><div class="card-head"><div><h3>최근 장애와 점검</h3><p>운영 이력은 관리자 감사 로그와 함께 보관됩니다.</p></div></div><div class="alert-list">${data.incidents.map((incident) => `<div class="alert-item"><span class="status-dot ${incident.status === 'investigating' ? 'warning' : 'info'}"></span><div class="alert-copy"><strong>${incident.title}</strong><span>${incident.date} · ${incident.impact}</span></div><span class="status-pill ${incident.status}">${statusLabels[incident.status]}</span></div>`).join('')}</div></article>`;
+    <article class="card card-pad"><div class="card-head"><div><h3>최근 운영 기록</h3><p>실제 관리자 감사 로그입니다.</p></div></div>${data.incidents.length ? `<div class="alert-list">${data.incidents.map((incident) => `<div class="alert-item"><span class="status-dot ${incident.status === 'investigating' ? 'warning' : 'info'}"></span><div class="alert-copy"><strong>${escapeHtml(incident.title)}</strong><span>${escapeHtml(incident.date)} · ${escapeHtml(incident.impact)}</span></div><span class="status-pill ${incident.status}">${statusLabels[incident.status]}</span></div>`).join('')}</div>` : '<div class="empty"><strong>운영 기록이 없습니다.</strong><p>관리자 작업이 발생하면 이곳에 표시됩니다.</p></div>'}</article>`;
 }
 
 function renderCosts(data) {
+  if (!data.available) {
+    return `
+      ${pageIntro('실제 사용량만 표시합니다', '공급사 청구 API가 연결되기 전에는 금액을 추정하지 않습니다.', `<span class="mode-badge">${formatGeneratedAt(data.generatedAt)} LIVE</span>`)}
+      <div class="notice"><span class="notice-icon">i</span><span><strong>청구액 미연동</strong> · ${escapeHtml(data.message)}</span></div>
+      <section class="grid kpi-grid three">
+        ${kpiCard({ label: '이번 달 API 호출', value: `${formatNumber(data.monthToDateCalls)}회`, delta: '실데이터', hint: 'Supabase api_usage', tone: 'coral' })}
+        ${kpiCard({ label: '청구 금액', value: '미연동', delta: '표시 안 함', hint: '공급사 Billing API 필요', tone: 'blue' })}
+        ${kpiCard({ label: '예산 대비', value: '미설정', delta: '표시 안 함', hint: '실제 금액 연결 후 계산', tone: 'amber' })}
+      </section>
+      <section class="grid two-col">
+        <article class="card card-pad"><div class="card-head"><div><h3>일별 API 호출</h3><p>최근 7일 실제 호출량</p></div></div><div class="chart-wrap compact"><canvas class="chart-canvas" data-chart="activity" data-values="${data.trend.map((d) => d.calls).join(',')}" data-labels="${data.trend.map((d) => d.date).join(',')}"></canvas></div></article>
+        <article class="card card-pad"><div class="card-head"><div><h3>API 호출 구성</h3><p>이번 달 실제 호출 비중</p></div></div>${data.providers.length ? `<div class="chart-wrap compact"><canvas class="chart-canvas" data-chart="donut" data-values="${data.providers.map((p) => p.ratio).join(',')}" data-labels="${data.providers.map((p) => p.name).join(',')}"></canvas></div>` : '<div class="empty"><strong>호출 기록이 없습니다.</strong></div>'}</article>
+      </section>
+      <article class="card card-pad"><div class="card-head"><div><h3>API별 실제 사용량</h3><p>금액 대신 확인 가능한 원본 호출 수를 표시합니다.</p></div></div>${data.providers.length ? data.providers.map((provider) => `<div class="provider-row"><div class="provider-name"><strong>${escapeHtml(provider.name)}</strong><span>${escapeHtml(provider.category)}</span></div><div class="provider-bar"><span style="width:${provider.ratio}%"></span></div><span class="provider-amount">${formatNumber(provider.calls)}회</span><span class="provider-change">${provider.ratio}%</span></div>`).join('') : '<div class="empty"><strong>이번 달 사용량이 없습니다.</strong></div>'}</article>`;
+  }
   const budgetRate = Math.round((data.monthToDate / data.budget) * 1000) / 10;
   return `
     ${pageIntro('성장 속도와 비용을 함께 관리하세요', '실제 청구 데이터는 백엔드가 공급사별 API를 집계해 전달합니다.', '<div class="segmented"><button>7월</button><button class="active">8월</button></div>')}
@@ -168,7 +190,7 @@ function renderCosts(data) {
 function openUserDrawer(user) {
   state.selectedUser = user;
   const statusLabel = { active: '정상', review: '검토 중', suspended: '정지' };
-  document.body.insertAdjacentHTML('beforeend', `<div class="drawer-backdrop" data-close-drawer></div><aside class="drawer" role="dialog" aria-modal="true" aria-label="사용자 상세"><div class="drawer-head"><h2>사용자 상세</h2><button class="icon-btn" data-close-drawer aria-label="닫기">×</button></div><div class="drawer-body"><div class="profile"><span class="user-avatar">${user.avatar}</span><div><h3>${escapeHtml(user.name)}</h3><p>${escapeHtml(user.email)} · ${escapeHtml(user.id)}</p></div></div><span class="status-pill ${user.status}">${statusLabel[user.status]}</span><div class="detail-grid"><div class="detail-item"><span>가입일</span><strong>${user.joinedAt}</strong></div><div class="detail-item"><span>최근 접속</span><strong>${user.lastSeen}</strong></div><div class="detail-item"><span>앱 환경</span><strong>${escapeHtml(user.os)}</strong></div><div class="detail-item"><span>버전</span><strong>${escapeHtml(user.version)}</strong></div><div class="detail-item"><span>생성 지도</span><strong>${user.maps}개</strong></div><div class="detail-item"><span>저장 장소</span><strong>${user.places}개</strong></div></div>${user.note ? `<div class="notice"><span class="notice-icon">i</span><span>${escapeHtml(user.note)}</span></div>` : ''}<h4 class="section-title">최근 활동</h4>${user.activities.map((activity) => `<div class="activity">${escapeHtml(activity)}</div>`).join('')}<div class="drawer-actions"><button class="soft-btn" data-toast="관리자 조치는 운영 API와 감사 로그 연동 후 실행됩니다.">세션 초기화</button><button class="primary-btn ${user.status === 'active' ? 'danger' : ''}" data-user-action="${user.status === 'active' ? 'suspended' : 'active'}">${user.status === 'active' ? '계정 정지' : '계정 활성화'}</button></div></div></aside>`);
+  document.body.insertAdjacentHTML('beforeend', `<div class="drawer-backdrop" data-close-drawer></div><aside class="drawer" role="dialog" aria-modal="true" aria-label="사용자 상세"><div class="drawer-head"><h2>사용자 상세</h2><button class="icon-btn" data-close-drawer aria-label="닫기">×</button></div><div class="drawer-body"><div class="profile"><span class="user-avatar">${user.avatar}</span><div><h3>${escapeHtml(user.name)}</h3><p>${escapeHtml(user.email)} · ${escapeHtml(user.id)}</p></div></div><span class="status-pill ${user.status}">${user.isAdmin ? '관리자 · ' : ''}${statusLabel[user.status]}</span><div class="detail-grid"><div class="detail-item"><span>가입일</span><strong>${user.joinedAt}</strong></div><div class="detail-item"><span>최근 접속</span><strong>${user.lastSeen}</strong></div><div class="detail-item"><span>앱 환경</span><strong>${escapeHtml(user.os)}</strong></div><div class="detail-item"><span>버전</span><strong>${escapeHtml(user.version)}</strong></div><div class="detail-item"><span>생성 지도</span><strong>${user.maps}개</strong></div><div class="detail-item"><span>저장 장소</span><strong>${user.places}개</strong></div></div>${user.note ? `<div class="notice"><span class="notice-icon">i</span><span>${escapeHtml(user.note)}</span></div>` : ''}<h4 class="section-title">최근 활동</h4>${user.activities.map((activity) => `<div class="activity">${escapeHtml(activity)}</div>`).join('')}<div class="drawer-actions"><button class="soft-btn" data-toast="일반 사용자 세션 강제 종료 기능은 아직 제공하지 않습니다.">세션 초기화</button>${user.isAdmin ? '<button class="soft-btn" disabled>관리자 계정 보호됨</button>' : `<button class="primary-btn ${user.status === 'active' ? 'danger' : ''}" data-user-action="${user.status === 'active' ? 'suspended' : 'active'}">${user.status === 'active' ? '계정 정지' : '계정 활성화'}</button>`}</div></div></aside>`);
   document.querySelector('.drawer [data-close-drawer]')?.focus();
   bindDrawerEvents();
 }
@@ -178,9 +200,16 @@ function bindDrawerEvents() {
   document.querySelector('[data-user-action]')?.addEventListener('click', async (event) => {
     const status = event.currentTarget.dataset.userAction;
     event.currentTarget.disabled = true;
-    await dataService.updateUserStatus(state.selectedUser.id, status);
-    closeDrawer();
-    showToast(APP_CONFIG.dataMode === 'mock' ? 'Mock 모드에서는 실제 계정 상태가 바뀌지 않습니다.' : '사용자 상태를 변경하고 감사 로그에 기록했습니다.');
+    try {
+      await dataService.updateUserStatus(state.selectedUser.id, status);
+      state.cache.clear();
+      closeDrawer();
+      showToast('사용자 상태를 변경하고 감사 로그에 기록했습니다.');
+      await render(true);
+    } catch (error) {
+      event.currentTarget.disabled = false;
+      showToast(error.message);
+    }
   });
 }
 
@@ -209,10 +238,13 @@ function bindEvents() {
   });
   document.querySelectorAll('[data-user-filter]').forEach((element) => element.addEventListener('click', () => { state.userFilter = element.dataset.userFilter; render(); }));
   document.querySelectorAll('[data-user-id]').forEach((row) => {
-    const handler = () => {
-      const users = state.cache.get(`users:${state.userQuery}`) ?? [];
-      const user = users.find((item) => item.id === row.dataset.userId);
-      if (user) openUserDrawer(user);
+    const handler = async () => {
+      try {
+        const user = await dataService.user(row.dataset.userId);
+        openUserDrawer(user);
+      } catch (error) {
+        showToast(error.message);
+      }
     };
     row.addEventListener('click', handler);
     row.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); handler(); } });
@@ -276,6 +308,7 @@ function drawDonut(canvas) {
   const colors = ['#4778b8', '#e45145', '#25886f', '#ad7622', '#aaa69e'];
   const { ctx, width, height } = prepareCanvas(canvas);
   const centerX = Math.min(width * .33, 110); const centerY = height / 2; const radius = Math.min(68, height * .37); const total = values.reduce((a, b) => a + b, 0);
+  if (!total) return;
   let angle = -Math.PI / 2;
   values.forEach((value, index) => { const next = angle + (value / total) * Math.PI * 2; ctx.beginPath(); ctx.arc(centerX, centerY, radius, angle, next); ctx.arc(centerX, centerY, radius * .62, next, angle, true); ctx.closePath(); ctx.fillStyle = colors[index]; ctx.fill(); angle = next; });
   ctx.textAlign = 'center'; ctx.fillStyle = '#242421'; ctx.font = '600 18px Georgia'; ctx.fillText('100%', centerX, centerY + 4); ctx.font = '9px sans-serif'; ctx.fillStyle = '#73716b'; ctx.fillText('누적 비용', centerX, centerY + 20);

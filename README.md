@@ -1,14 +1,14 @@
 # 도화지 운영실
 
-도화지(`dohwaji.app`) 운영자를 위한 정적 관리자 프론트엔드입니다. 별도 빌드 없이 GitHub Pages에 배포할 수 있습니다. 화면 데이터는 초기에는 현실적인 mock data를 사용하지만, 로그인은 실제 도화지 백엔드와 Supabase Auth를 사용합니다. 정적 파일에는 관리자 비밀번호, 세션 토큰, service role key가 포함되지 않습니다.
+도화지(`dohwaji.app`) 운영자를 위한 정적 관리자 프론트엔드입니다. 별도 빌드 없이 GitHub Pages에 배포할 수 있습니다. 로그인과 화면 데이터 모두 실제 도화지 백엔드와 Supabase를 사용합니다. 정적 파일에는 관리자 비밀번호, 세션 토큰, service role key가 포함되지 않습니다.
 
 ## 포함 화면
 
-- **Dashboard**: DAU, 가입, 지도 생성, 영향 사용자 KPI, 추이 차트, 운영 신호
+- **Dashboard**: 로그인 사용자, 가입, 지도 생성, API 호출 KPI, 추이 차트, 운영 신호
 - **Users**: 이름·이메일·UID 검색, 상태 필터, 사용자 상세, 최근 활동, 관리 작업 진입점
-- **Usage**: DAU/MAU, D7 리텐션, 전환율, 이벤트 추이, 퍼널, 이벤트 순위
-- **System**: 서비스 상태, 응답 시간, 가동률, 앱 버전, 장애 이력, Sentry 연결 지점
-- **Costs**: 월 누적 비용, 예산 소진율, 월말 예측, 공급사별 비용, 사용자당 비용
+- **Usage**: 최근 로그인, 지도·장소·공개 코스 이벤트 추이, 퍼널, 이벤트 순위
+- **System**: 데이터베이스·Auth·Storage 실시간 상태, 관리자 감사 로그, Sentry 연결 지점
+- **Costs**: 실제 API 호출량. 청구 API가 연결되기 전에는 금액을 추정하지 않음
 
 화면 전환에는 `#/dashboard`, `#/users` 같은 해시 라우팅을 사용합니다. 따라서 GitHub Pages의 하위 경로에서 새로고침해도 404가 발생하지 않습니다.
 
@@ -34,9 +34,9 @@ python -m http.server 4173
 
 커스텀 도메인을 사용할 경우 GitHub Pages 설정에서 `admin.dohwaji.app`을 등록하고 DNS 레코드를 연결하세요. 관리자 화면은 정적 파일이므로 도메인을 숨기는 것이 접근 제어가 되지는 않습니다.
 
-## 운영 API로 전환
+## 운영 API
 
-[src/config.js](./src/config.js)에서 아래 값을 변경합니다.
+[src/config.js](./src/config.js)는 기본적으로 실제 API 모드입니다.
 
 ```js
 export const APP_CONFIG = {
@@ -55,10 +55,9 @@ export const APP_CONFIG = {
 | `src/adapters/api.js` | `/admin/*` 운영 API 호출과 401 처리 |
 | `src/adapters/posthog.js` | PostHog 집계 프록시 호출 |
 | `src/adapters/sentry.js` | Sentry 이슈 집계 프록시 호출 |
-| `src/services/dataService.js` | mock/API 모드 선택과 화면 데이터 조합 |
-| `src/data/mockData.js` | 개발·시연용 데이터 |
+| `src/services/dataService.js` | 운영 API와 선택적 PostHog/Sentry 응답 조합 |
 
-예상 백엔드 계약은 아래와 같습니다.
+구현된 백엔드 계약은 아래와 같습니다.
 
 ```text
 GET    /api/admin/auth/session
@@ -77,7 +76,16 @@ GET    /admin/integrations/posthog?range=7d
 GET    /admin/integrations/sentry?range=24h
 ```
 
-API 응답은 현재 mock data와 같은 형태를 권장합니다. 계약이 달라지면 화면 코드를 바꾸지 말고 `dataService`에서 정규화하세요.
+모든 엔드포인트는 `requireAdmin()`으로 보호되며 Supabase service role은 서버에서만 사용합니다.
+
+### 현재 데이터 범위
+
+- Supabase Auth: 가입일, 이메일 확인, 최근 로그인, 계정 정지 상태
+- PostgreSQL: 지도, 장소, 보관 장소, 공개 코스, 좋아요, 다운로드, 관리자 감사 로그
+- `api_usage`: 검색·경로·정적 지도 API의 일별 실제 호출량
+- 실시간 연결 확인: PostgreSQL, Supabase Auth, Storage, 지도 API 설정 여부
+
+앱 버전, 반복 방문 리텐션, Sentry 오류, Railway/Supabase 실제 청구액은 원천 데이터 또는 공급사 API가 아직 연결되지 않았으므로 임의 값이나 0원을 표시하지 않습니다. 해당 연동이 완료되면 PostHog/Sentry 어댑터 및 비용 API 응답에 합칩니다.
 
 ## 관리자 인증 설계
 
@@ -139,4 +147,4 @@ Sentry auth token과 오류 원문의 개인정보는 프론트로 보내지 않
 - 세션 만료 및 강제 로그아웃 구현
 - CORS allowlist와 CSRF 보호 설정
 - GitHub Pages 공개 URL 앞에 Cloudflare Access 등의 추가 접근 제어 적용 검토
-- mock 모드가 아닌지 배포 전 확인
+- `APP_CONFIG.dataMode`가 `api`인지 배포 전 확인

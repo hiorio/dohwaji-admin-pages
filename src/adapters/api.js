@@ -31,7 +31,7 @@ export const adminApi = {
   dashboard: () => apiRequest('/dashboard'),
   users: (query = '') => apiRequest(`/users?q=${encodeURIComponent(query)}`),
   user: (id) => apiRequest(`/users/${encodeURIComponent(id)}`),
-  usage: () => apiRequest('/usage'),
+  usage: (range = '7d') => apiRequest(`/usage?range=${encodeURIComponent(range)}`),
   system: () => apiRequest('/system'),
   costs: () => apiRequest('/costs'),
   updateUserStatus: (id, status) => apiRequest(`/users/${encodeURIComponent(id)}/status`, {
